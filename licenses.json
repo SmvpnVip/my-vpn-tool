@@ -1,12 +1,7 @@
 [
   {
-    "bot_token": "123456789:AAH_User_A_Bot_Token",
+    "bot_token": "8885424993:AAH82fi_It03YB4Z_C1-RTstH6VKNQB_GG8",
     "user_id": "5751367481",
     "expire_date": "2026-09-26 01:33:07"
-  },
-  {
-    "bot_token": "987654321:AAH_User_B_Bot_Token",
-    "user_id": "1122334455",
-    "expire_date": "2026-10-15 12:00:00"
   }
 ]
