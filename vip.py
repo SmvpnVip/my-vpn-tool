@@ -11,20 +11,22 @@ import datetime
 import requests
 from urllib.parse import urlparse, parse_qs, urlencode, urljoin, urlunparse
 import ddddocr
-from aiohttp_socks import ProxyConnector
+
+# python-telegram-bot modules
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputFile
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 
+# SOCKS proxy support
+from aiohttp_socks import ProxyConnector
 
 # ==================== CONFIGURATION ====================
-# GitHub ပေါ်ရှိ licenses.json ၏ Raw Link ကို ဤနေရာတွင် ထည့်ပါ
+# သင့်ရဲ့ GitHub မှ licenses.json ၏ Raw Link ကို ဤနေရာတွင် ထည့်ပါ
 LICENSE_URL = "https://raw.githubusercontent.com/SmvpnVip/my-vpn-tool/main/licenses.json"
 AUTH_CACHE_FILE = ".auth_cache"
 PORTAL_URL_PATH = "portal_url_"
 PROXY_FILE = "proxies.txt"
 
-ADMIN_IDS = [1801787123]  
 ADMIN_CONTACT = "@SmVPN789"
 
 TIMEOUT_SEC = 15  
@@ -44,35 +46,29 @@ def show_banner():
         pass
     print(f"{bcyan}="*55)
     print(f"   ⚡ RUIJIE  ASYNC EXTREME  ⚡   ")
-    print(f"     Telegram@trenzych       ")
+    print(f"     Telegram@SmVPN789       ")
     print(f"{bcyan}="*55 + f"{reset}")
 
-# ==================== PAIR AUTHENTICATION (Bot Token & User ID) ====================
+# ==================== AUTHENTICATION & TOKEN FETCHING ====================
 def authenticate_user():
     show_banner()
-    print("First-time Setup · Bot Token & Telegram ID Authentication")
+    print("First-time Setup · Telegram ID Authentication")
     
-    input_bot_token = ""
-    input_user_id = ""
-    
+    telegram_id = ""
     if os.path.exists(AUTH_CACHE_FILE):
         try:
             with open(AUTH_CACHE_FILE, "r") as f:
-                lines = f.read().splitlines()
-                if len(lines) >= 2:
-                    input_bot_token = lines[0].strip()
-                    input_user_id = lines[1].strip()
+                telegram_id = f.read().strip()
         except:
             pass
 
-    if not input_bot_token or not input_user_id:
-        print("[*] Enter your Bot Token and Telegram ID once (will be remembered)")
-        input_bot_token = input(f"{bcyan}[*] Enter Bot Token (BF ID): {reset}").strip()
-        input_user_id = input(f"{bcyan}[*] Enter Telegram ID: {reset}").strip()
-        
-        if input_bot_token and input_user_id:
+    if not telegram_id:
+        print("[*] Enter your Telegram ID once (will be remembered)")
+        print("[*] Example: 123456789")
+        telegram_id = input(f"{bcyan}[ID] Telegram ID: {reset}").strip()
+        if telegram_id:
             with open(AUTH_CACHE_FILE, "w") as f:
-                f.write(f"{input_bot_token}\n{input_user_id}")
+                f.write(telegram_id)
 
     print("\nChecking authorization...")
     
@@ -87,44 +83,38 @@ def authenticate_user():
         print(f"{bred}[x] Connection failed: {e}{reset}")
         sys.exit(1)
 
-    authorized = False
-    expire_str = ""
-
-    # Admin ID ဖြစ်မဖြစ် စစ်ဆေးခြင်း
-    if int(input_user_id) in ADMIN_IDS:
-        print(f"{bgreen}[+] Access Granted! (Admin Mode){reset}")
-        print("="*55)
-        time.sleep(1.5)
-        return input_bot_token
-
-    # တွဲရက် (Pair) ကို စစ်ဆေးခြင်း
+    matched_item = None
     for item in licenses_list:
-        if item.get("bot_token") == input_bot_token and str(item.get("user_id")) == str(input_user_id):
-            expire_str = item.get("expire_date")
-            authorized = True
+        if str(item.get("user_id")) == str(telegram_id):
+            matched_item = item
             break
 
-    if authorized:
-        expire_date = datetime.datetime.strptime(expire_str, "%Y-%m-%d %H:%M:%S")
-        now = datetime.datetime.now()
+    if not matched_item:
+        print(f"{bred}[x] Access Denied: Telegram ID ({telegram_id}) not found in license list!{reset}")
+        if os.path.exists(AUTH_CACHE_FILE):
+            os.remove(AUTH_CACHE_FILE)
+        sys.exit(1)
 
-        if now < expire_date:
-            left = expire_date - now
-            days = left.days
-            hours, remainder = divmod(left.seconds, 3600)
-            minutes, _ = divmod(remainder, 60)
+    expire_str = matched_item.get("expire_date")
+    bot_token = matched_item.get("bot_token")
+    
+    expire_date = datetime.datetime.strptime(expire_str, "%Y-%m-%d %H:%M:%S")
+    now = datetime.datetime.now()
 
-            print(f"{bgreen}[+] Access Granted! (Verified){reset}")
-            print(f"[*] Expires : {expire_str}")
-            print(f"[*] Left    : {days}d {hours}h {minutes}m")
-            print("="*55)
-            time.sleep(2)
-            return input_bot_token
-        else:
-            print(f"{bred}[x] Access Denied: License Expired on {expire_str}!{reset}")
-            sys.exit(1)
+    if now < expire_date:
+        left = expire_date - now
+        days = left.days
+        hours, remainder = divmod(left.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+
+        print(f"{bgreen}[+] Access Granted! (Verified){reset}")
+        print(f"[*] Expires : {expire_str}")
+        print(f"[*] Left    : {days}d {hours}h {minutes}m")
+        print("="*55)
+        time.sleep(2)
+        return bot_token
     else:
-        print(f"{bred}[x] Access Denied: Invalid Bot Token or Telegram ID pair!{reset}")
+        print(f"{bred}[x] Access Denied: License Expired on {expire_str}!{reset}")
         if os.path.exists(AUTH_CACHE_FILE):
             os.remove(AUTH_CACHE_FILE)
         sys.exit(1)
@@ -429,8 +419,8 @@ async def worker(worker_id, login_url, captcha_base_url, verify_url, headers, us
             async with aiohttp.ClientSession(connector=proxy_connector, connector_owner=True) as session:
                 current_session_id = None
                 codes_checked = 0
-                while not ud['stop_event'].is_set() and codes_checked < MAX_CODES_PER_SESSION:
-                    if current_session_id is None or codes_checked >= MAX_CODES_PER_SID:
+                while not ud['stop_event'].is_set() and codes_checked < NUM_WORKERS:
+                    if current_session_id is None or codes_checked >= NUM_WORKERS:
                         sid, mac = await get_sid_from_gateway(session, ud['portal_url'], user_id)
                         if ud['stop_event'].is_set():
                             break
@@ -582,7 +572,7 @@ async def run_user_scanner(context: ContextTypes.DEFAULT_TYPE, user_id: int):
 
 # ==================== KEYBOARDS & MENUS ====================
 def get_main_menu_markup(user_id: int):
-    keyboard = [
+    return InlineKeyboardMarkup([
         [
             InlineKeyboardButton(text="🔗 Session URL ထည့်ရန်", callback_data="btn_update_portal"),
             InlineKeyboardButton(text="🔍 Code ရှာရန်", callback_data="btn_start_scanner")
@@ -593,10 +583,7 @@ def get_main_menu_markup(user_id: int):
         [
             InlineKeyboardButton(text="⚙️ Scanner Mode ရွေးရန်", callback_data="btn_mode_menu")
         ]
-    ]
-    if user_id in ADMIN_IDS:
-        keyboard.append([InlineKeyboardButton(text="⚙️ Admin Panel", callback_data="btn_admin_panel")])
-    return InlineKeyboardMarkup(keyboard)
+    ])
 
 # ==================== HANDLERS ====================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -724,51 +711,6 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
         code_str = "\n".join(codes) if codes else "သိမ်းဆည်းထားသော Code မရှိသေးပါ။"
         await query.message.edit_text(f"📦 **သိမ်းထားသော Code များ:**\n\n{code_str}", reply_markup=get_main_menu_markup(user_id), parse_mode=ParseMode.MARKDOWN)
 
-    elif data == "btn_admin_panel" and user_id in ADMIN_IDS:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(text="➕ Proxy ထည့်ရန်", callback_data="admin_add_proxy"),
-             InlineKeyboardButton(text="🗑️ Reset / Clear Proxies", callback_data="admin_reset_proxies")],
-            [InlineKeyboardButton(text="📊 Stats စစ်ရန်", callback_data="admin_stats"),
-             InlineKeyboardButton(text="⬅️ ပင်မမီနူးသို့", callback_data="admin_back")]
-        ])
-        await query.message.edit_text(
-            "⚙️ **Admin Control Panel**\n\n"
-            "အောက်ပါခလုတ်များမှ Proxy များကို စီမံခြင်းများ ပြုလုပ်နိုင်ပါသည်:",
-            reply_markup=keyboard,
-            parse_mode=ParseMode.MARKDOWN
-        )
-
-    elif data == "admin_add_proxy" and user_id in ADMIN_IDS:
-        ud['state'] = 'waiting_for_proxy_text'
-        await query.message.edit_text(
-            "📥 **Proxy များကို တစ်ခါတည်း ကူးထည့်ပါ (တစ်ကြောင်းလျှင် တစ်ခု)**\n\n"
-            "ဥပမာ -\n"
-            "123.45.67.89:8080\n"
-            "socks5://host:port",
-            parse_mode=ParseMode.MARKDOWN
-        )
-
-    elif data == "admin_reset_proxies" and user_id in ADMIN_IDS:
-        pm = get_proxy_manager()
-        pm.reset_all()
-        await query.message.edit_text(
-            "🗑️ **Proxy အားလုံး အောင်မြင်စွာ ရှင်းလင်းပြီးပါပြီ (Reset Done)**\n\n"
-            "ယခုအခါ Proxy အသေများ ကုန်စင်သွားပါပြီ။ Proxy အသစ်များ ထပ်မံထည့်သွင်းနိုင်ပါသည်။",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="⬅️ Admin Panel သို့", callback_data="btn_admin_panel")]]),
-            parse_mode=ParseMode.MARKDOWN
-        )
-
-    elif data == "admin_stats" and user_id in ADMIN_IDS:
-        pm = get_proxy_manager()
-        total, active = pm.stats()
-        await query.message.edit_text(
-            f"📊 **Proxy Statistics**\n\n"
-            f"• Total Proxies: `{total}`\n"
-            f"• Active Proxies: `{active}`",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="⬅ နောက်သို့", callback_data="btn_admin_panel")]]),
-            parse_mode=ParseMode.MARKDOWN
-        )
-
     elif data == "admin_back":
         url_status = "သတ်မှတ်ပြီး" if ud['portal_url'] else "မသတ်မှတ်ရသေးပါ"
         text = (
@@ -806,35 +748,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ud['state'] = None
         await update.message.reply_text(f"✅ Custom Start Digit = `{ud['start_digit']}` သတ်မှတ်ပြီးပါပြီ။", reply_markup=get_main_menu_markup(user_id), parse_mode=ParseMode.MARKDOWN)
 
-    elif state == 'waiting_for_proxy_text' and user_id in ADMIN_IDS:
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        if not lines:
-            await update.message.reply_text("❌ Proxy များ ဗလာဖြစ်နေပါသည်။")
-            return
-        try:
-            with open(PROXY_FILE, 'a') as f:
-                f.write('\n'.join(lines) + '\n')
-        except Exception as e:
-            await update.message.reply_text(f"❌ အမှားအယွင်းရှိ: {e}")
-            return
-        pm = get_proxy_manager()
-        pm.reload()
-        total, active = pm.stats()
-        ud['state'] = None
-        await update.message.reply_text(
-            f"✅ **Proxies များ အောင်မြင်စွာ ထပ်ပေါင်းထည့်ပြီးပါပြီ**\n"
-            f"📊 Total: `{total}`\n"
-            f"✅ Active: `{active}`",
-            reply_markup=get_main_menu_markup(user_id),
-            parse_mode=ParseMode.MARKDOWN
-        )
-
 # ==================== MAIN ====================
 def main():
-    # 1. ပထမဦးစွာ Bot Token (BF ID) နှင့် User ID တွဲရက်ကို Terminal တွင် တောင်းခံပြီး သက်တမ်းစစ်ဆေးမည်
+    # 1. ဤနေရာတွင် User ID တစ်ခုတည်း တောင်းခံပြီး GitHub ရှိ licenses.json နှင့် ချိန်ကိုက်စစ်ဆေးမည်
     bot_token = authenticate_user()
 
-    # 2. အောင်မြင်ပါက ထို Bot Token ဖြင့် Bot ကို စတင်မည်
+    # 2. စစ်ဆေးမှု အောင်မြင်ပါက licenses.json ထဲမှ Bot Token ဖြင့် Bot ကို အလိုအလျောက် စတင်မည်
     app = Application.builder().token(bot_token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(handle_callbacks))
