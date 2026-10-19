@@ -12,6 +12,10 @@ import requests
 from urllib.parse import urlparse, parse_qs, urlencode, urljoin, urlunparse
 import ddddocr
 from aiohttp_socks import ProxyConnector
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputFile
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.constants import ParseMode
+
 
 # ==================== CONFIGURATION ====================
 # GitHub ပေါ်ရှိ licenses.json ၏ Raw Link ကို ဤနေရာတွင် ထည့်ပါ
